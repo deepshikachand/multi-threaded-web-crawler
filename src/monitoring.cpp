@@ -1,232 +1,189 @@
-#include "monitoring.hpp"
-#include <stdexcept>
-#include <algorithm>
-#include <filesystem>
+#include "../include/monitoring.hpp"
+#include <iostream>
+#include <iomanip>
+#include <sstream>
+#include <ctime>
+#include <chrono>
+#include <cstdarg>
+#include <cstring>
 
-Monitoring::Monitoring(const std::string& logFile, const std::string& metricsFile)
-    : currentLogLevel(LogLevel::INFO) {
-    logStream.open(logFile, std::ios::app);
-    metricsStream.open(metricsFile, std::ios::app);
+Monitoring::Monitoring(const std::string& logFilePath, LogLevel level)
+    : currentLogLevel(level), logFilePath(logFilePath) {
     
-    if (!logStream.is_open()) {
-        throw std::runtime_error("Failed to open log file: " + logFile);
+    // Initialize metrics
+    metrics.pagesCrawled = 0;
+    metrics.failedRequests = 0;
+    metrics.imagesProcessed = 0;
+    metrics.urlsQueued = 0;
+    metrics.activeThreads = 0;
+    
+    // Open log file
+    logFile.open(logFilePath, std::ios::out | std::ios::app);
+    if (!logFile.is_open()) {
+        std::cerr << "Failed to open log file: " << logFilePath << std::endl;
     }
-    if (!metricsStream.is_open()) {
-        throw std::runtime_error("Failed to open metrics file: " + metricsFile);
-    }
-
-    // Initialize stats
-    currentStats = CrawlerStats{
-        .pagesCrawled = 0,
-        .queueSize = 0,
-        .activeThreads = 0,
-        .failedRequests = 0,
-        .totalBytesDownloaded = 0,
-        .averageResponseTime = 0.0,
-        .startTime = std::chrono::system_clock::now()
-    };
+    
+    // Log initialization
+    log(LogLevel::INFO, "Monitoring system initialized");
 }
 
 Monitoring::~Monitoring() {
-    if (logStream.is_open()) {
-        logStream.close();
-    }
-    if (metricsStream.is_open()) {
-        metricsStream.close();
+    // Log shutdown
+    log(LogLevel::INFO, "Monitoring system shutdown");
+    
+    // Close log file
+    if (logFile.is_open()) {
+        logFile.close();
     }
 }
 
 void Monitoring::log(LogLevel level, const std::string& message) {
+    // Skip if level is below current log level
     if (level < currentLogLevel) {
         return;
     }
-
+    
     std::lock_guard<std::mutex> lock(logMutex);
+    
+    // Get current time
     auto now = std::chrono::system_clock::now();
-    auto time = std::chrono::system_clock::to_time_t(now);
-    std::stringstream ss;
-    ss << std::put_time(std::localtime(&time), "%Y-%m-%d %H:%M:%S");
+    auto timeT = std::chrono::system_clock::to_time_t(now);
+    std::tm timeInfo;
+#ifdef _WIN32
+    localtime_s(&timeInfo, &timeT);
+#else
+    localtime_r(&timeT, &timeInfo);
+#endif
     
-    logStream << "[" << ss.str() << "] [" 
-              << getLogLevelString(level) << "] "
-              << message << std::endl;
-}
-
-void Monitoring::setLogLevel(LogLevel level) {
-    currentLogLevel = level;
-}
-
-void Monitoring::setLogFile(const std::string& filename) {
-    std::lock_guard<std::mutex> lock(logMutex);
-    if (logStream.is_open()) {
-        logStream.close();
-    }
-    logStream.open(filename, std::ios::app);
-    if (!logStream.is_open()) {
-        throw std::runtime_error("Failed to open new log file: " + filename);
-    }
-}
-
-void Monitoring::recordMetric(const std::string& name, double value) {
-    std::lock_guard<std::mutex> lock(metricsMutex);
+    // Format time string
+    std::ostringstream timeStr;
+    timeStr << std::put_time(&timeInfo, "%Y-%m-%d %H:%M:%S");
     
-    Metric metric{
-        .name = name,
-        .value = value,
-        .timestamp = std::chrono::system_clock::now()
-    };
+    // Format log line
+    std::string logLine = timeStr.str() + " [" + logLevelToString(level) + "] " + message;
     
-    metrics.push_back(metric);
-    writeMetricToFile(metric);
-    cleanupOldMetrics();
-}
-
-std::vector<Monitoring::Metric> Monitoring::getMetrics(
-    const std::string& name,
-    std::chrono::minutes timeWindow) const {
+    // Output to console and file
+    std::cout << logLine << std::endl;
     
-    std::lock_guard<std::mutex> lock(metricsMutex);
-    auto now = std::chrono::system_clock::now();
-    
-    std::vector<Metric> filtered;
-    std::copy_if(metrics.begin(), metrics.end(),
-                 std::back_inserter(filtered),
-                 [&](const Metric& m) {
-                     return m.name == name &&
-                            (now - m.timestamp) <= timeWindow;
-                 });
-    
-    return filtered;
-}
-
-void Monitoring::saveMetrics() {
-    std::lock_guard<std::mutex> lock(metricsMutex);
-    for (const auto& metric : metrics) {
-        writeMetricToFile(metric);
+    if (logFile.is_open()) {
+        logFile << logLine << std::endl;
+        logFile.flush();
     }
 }
 
-void Monitoring::loadMetrics() {
-    std::lock_guard<std::mutex> lock(metricsMutex);
-    metrics.clear();
-    
-    std::ifstream file(metricsStream.filename());
-    if (!file.is_open()) {
+void Monitoring::logf(LogLevel level, const char* format, ...) {
+    // Skip if level is below current log level
+    if (level < currentLogLevel) {
         return;
     }
     
-    std::string line;
-    while (std::getline(file, line)) {
-        std::stringstream ss(line);
-        std::string name, timestamp;
-        double value;
-        
-        if (std::getline(ss, name, ',') &&
-            ss >> value &&
-            std::getline(ss, timestamp)) {
-            
-            Metric metric{
-                .name = name,
-                .value = value,
-                .timestamp = std::chrono::system_clock::from_time_t(
-                    std::stoll(timestamp))
-            };
-            metrics.push_back(metric);
-        }
+    // Format the message using varargs
+    va_list args;
+    va_start(args, format);
+    
+    // Determine required buffer size
+    va_list argsCopy;
+    va_copy(argsCopy, args);
+    const int bufferSize = vsnprintf(nullptr, 0, format, argsCopy) + 1;
+    va_end(argsCopy);
+    
+    if (bufferSize <= 0) {
+        va_end(args);
+        log(level, "Error formatting log message");
+        return;
     }
+    
+    // Format the message
+    std::vector<char> buffer(bufferSize);
+    vsnprintf(buffer.data(), buffer.size(), format, args);
+    va_end(args);
+    
+    // Log the formatted message
+    log(level, std::string(buffer.data()));
 }
 
-void Monitoring::updateStats(const CrawlerStats& stats) {
-    currentStats = stats;
+Monitoring::Metrics Monitoring::getMetrics() const {
+    std::lock_guard<std::mutex> lock(metricsMutex);
+    return metrics;
 }
 
-Monitoring::CrawlerStats Monitoring::getCurrentStats() const {
-    return currentStats;
+void Monitoring::updateMetrics(const Metrics& newMetrics) {
+    std::lock_guard<std::mutex> lock(metricsMutex);
+    metrics = newMetrics;
 }
 
-void Monitoring::generateReport(const std::string& filename) {
-    std::ofstream report(filename);
-    if (!report.is_open()) {
-        throw std::runtime_error("Failed to create report file: " + filename);
-    }
-
-    auto now = std::chrono::system_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::seconds>(
-        now - currentStats.startTime).count();
-
-    report << "Crawler Report\n"
-           << "=============\n\n"
-           << "Duration: " << duration << " seconds\n"
-           << "Pages Crawled: " << currentStats.pagesCrawled << "\n"
-           << "Queue Size: " << currentStats.queueSize << "\n"
-           << "Active Threads: " << currentStats.activeThreads << "\n"
-           << "Failed Requests: " << currentStats.failedRequests << "\n"
-           << "Total Downloaded: " << (currentStats.totalBytesDownloaded / 1024 / 1024)
-           << " MB\n"
-           << "Average Response Time: " << std::fixed << std::setprecision(2)
-           << currentStats.averageResponseTime << "s\n\n"
-           << "Performance Metrics\n"
-           << "==================\n";
-
-    auto profilingResults = getProfilingResults();
-    for (const auto& [operation, time] : profilingResults) {
-        report << operation << ": " << time << "s\n";
-    }
+std::string Monitoring::getCurrentStats() const {
+    Metrics current = getMetrics();
+    
+    std::ostringstream stats;
+    stats << "Pages crawled: " << current.pagesCrawled
+          << ", Failed requests: " << current.failedRequests
+          << ", Images processed: " << current.imagesProcessed
+          << ", URLs queued: " << current.urlsQueued
+          << ", Active threads: " << current.activeThreads;
+    
+    return stats.str();
 }
 
-void Monitoring::startProfiling(const std::string& operation) {
+void Monitoring::startProfiling(const std::string& operationName) {
     std::lock_guard<std::mutex> lock(profilingMutex);
-    auto& entry = profilingData[operation];
-    entry.startTime = std::chrono::steady_clock::now();
-    entry.callCount++;
+    
+    // Create entry if it doesn't exist
+    if (profilingData.find(operationName) == profilingData.end()) {
+        ProfilingData data;
+        data.totalTime = std::chrono::duration<double>(0);
+        data.callCount = 0;
+        profilingData[operationName] = data;
+    }
+    
+    // Set start time
+    profilingData[operationName].startTime = std::chrono::high_resolution_clock::now();
 }
 
-void Monitoring::stopProfiling(const std::string& operation) {
+void Monitoring::stopProfiling(const std::string& operationName) {
     std::lock_guard<std::mutex> lock(profilingMutex);
-    auto it = profilingData.find(operation);
+    
+    auto it = profilingData.find(operationName);
     if (it != profilingData.end()) {
-        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::steady_clock::now() - it->second.startTime).count();
-        it->second.totalTime += duration / 1000000.0;
+        // Calculate elapsed time
+        auto endTime = std::chrono::high_resolution_clock::now();
+        auto elapsed = endTime - it->second.startTime;
+        
+        // Update profiling data
+        it->second.totalTime += elapsed;
+        it->second.callCount++;
     }
 }
 
-std::vector<std::pair<std::string, double>> Monitoring::getProfilingResults() const {
+std::map<std::string, Monitoring::ProfilingData> Monitoring::getProfilingResults() const {
     std::lock_guard<std::mutex> lock(profilingMutex);
-    std::vector<std::pair<std::string, double>> results;
-    
-    for (const auto& [operation, entry] : profilingData) {
-        if (entry.callCount > 0) {
-            results.emplace_back(operation, entry.totalTime / entry.callCount);
-        }
-    }
-    
-    return results;
+    return profilingData;
 }
 
-std::string Monitoring::getLogLevelString(LogLevel level) const {
+double Monitoring::getAverageOperationTime(const std::string& operationName) const {
+    std::lock_guard<std::mutex> lock(profilingMutex);
+    
+    auto it = profilingData.find(operationName);
+    if (it != profilingData.end() && it->second.callCount > 0) {
+        return it->second.totalTime.count() / it->second.callCount;
+    }
+    
+    return 0.0;
+}
+
+std::string Monitoring::logLevelToString(LogLevel level) const {
     switch (level) {
-        case LogLevel::DEBUG: return "DEBUG";
-        case LogLevel::INFO: return "INFO";
-        case LogLevel::WARNING: return "WARNING";
-        case LogLevel::ERROR: return "ERROR";
-        default: return "UNKNOWN";
+        case LogLevel::DEBUG:
+            return "DEBUG";
+        case LogLevel::INFO:
+            return "INFO";
+        case LogLevel::WARNING:
+            return "WARNING";
+        case LogLevel::LOG_ERROR:
+            return "ERROR";
+        case LogLevel::CRITICAL:
+            return "CRITICAL";
+        default:
+            return "UNKNOWN";
     }
 }
-
-void Monitoring::writeMetricToFile(const Metric& metric) {
-    auto timestamp = std::chrono::system_clock::to_time_t(metric.timestamp);
-    metricsStream << metric.name << "," << metric.value << "," 
-                 << timestamp << std::endl;
-}
-
-void Monitoring::cleanupOldMetrics() {
-    auto now = std::chrono::system_clock::now();
-    auto cutoff = now - std::chrono::hours(24); // Keep last 24 hours
-    
-    metrics.erase(
-        std::remove_if(metrics.begin(), metrics.end(),
-            [&](const Metric& m) { return m.timestamp < cutoff; }),
-        metrics.end()
-    );
-} 

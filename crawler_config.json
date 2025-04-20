@@ -1,0 +1,56 @@
+{
+    "crawler": {
+        "start_url": "https://developer.mozilla.org/en-US/docs/Web",
+        "max_depth": 2,
+        "max_pages": 50,
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Multi-Threaded-Web-Crawler/1.0",
+        "respect_robots_txt": true,
+        "follow_redirects": true,
+        "timeout_seconds": 30,
+        "retry_count": 3
+    },
+    "threading": {
+        "thread_count": 4,
+        "queue_size_limit": 1000,
+        "batch_size": 5
+    },
+    "storage": {
+        "database_path": "data/crawler.db",
+        "save_html": true,
+        "save_images": true,
+        "image_directory": "data/images",
+        "content_directory": "data/content"
+    },
+    "filters": {
+        "allowed_domains": ["developer.mozilla.org"],
+        "excluded_paths": [
+            "/login",
+            "/logout",
+            "/admin",
+            "/cart",
+            "/checkout",
+            "/account",
+            "/signup",
+            "/register"
+        ],
+        "allowed_extensions": [".html", ".htm", ".php", ".asp", ".aspx", ".jsp"],
+        "image_extensions": [".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"]
+    },
+    "monitoring": {
+        "log_level": "INFO",
+        "log_file": "logs/crawler.log",
+        "enable_console_output": true,
+        "status_update_interval_seconds": 5
+    },
+    "advanced": {
+        "request_delay_ms": 200,
+        "max_file_size_mb": 10,
+        "detect_language": true,
+        "extract_metadata": true,
+        "handle_javascript": false,
+        "respect_canonical": true,
+        "max_redirect_count": 5,
+        "detect_duplicates": true,
+        "handle_cookies": true
+    }
+} 

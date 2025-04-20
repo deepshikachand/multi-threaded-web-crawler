@@ -3,11 +3,14 @@
 #include <string>
 #include <filesystem>
 #include <mutex>
+#include <shared_mutex>
 #include <unordered_map>
 #include <memory>
-#include <fcntl.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
+#include <vector>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 namespace fs = std::filesystem;
 
@@ -37,27 +40,49 @@ public:
     void flushIndex();
     void optimizeIndex();
 
+    // Image operations
+    bool saveImage(const std::string& url, const std::vector<uint8_t>& data, const std::string& extension);
+
 private:
     // Base directory for storage
     fs::path base_directory;
     
     // Index data structures with memory mapping
     struct MappedFile {
-        int fd;
-        void* mapping;
-        size_t size;
+#ifdef _WIN32
+        HANDLE hFile = INVALID_HANDLE_VALUE;
+        HANDLE hMapping = NULL;
+#else
+        int fd = -1;
+#endif
+        void* mapping = nullptr;
+        size_t size = 0;
+        
         ~MappedFile() {
+#ifdef _WIN32
+            if (mapping) {
+                UnmapViewOfFile(mapping);
+            }
+            if (hMapping != NULL) {
+                CloseHandle(hMapping);
+            }
+            if (hFile != INVALID_HANDLE_VALUE) {
+                CloseHandle(hFile);
+            }
+#else
             if (mapping) {
                 munmap(mapping, size);
             }
             if (fd != -1) {
                 close(fd);
             }
+#endif
         }
     };
     
     std::unordered_map<std::string, std::unique_ptr<MappedFile>> url_to_file;
     std::unordered_map<std::string, size_t> domain_page_counts;
+    std::unordered_map<std::string, std::string> image_paths; // Map of URLs to image file paths
     
     // Thread safety
     mutable std::shared_mutex index_mutex;

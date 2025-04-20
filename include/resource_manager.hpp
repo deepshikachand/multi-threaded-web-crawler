@@ -6,6 +6,7 @@
 #include <memory>
 #include <filesystem>
 #include <chrono>
+#include <unordered_map>
 
 class ResourceManager {
 public:

@@ -1,85 +1,140 @@
 #pragma once
 
+#include "build_config.hpp"
 #include <string>
+#include <map>
 #include <vector>
-#include <memory>
-#include <chrono>
 #include <mutex>
+#include <chrono>
 #include <fstream>
-#include <sstream>
-#include <iomanip>
+#include <memory>
 
+/**
+ * @class Monitoring
+ * @brief Provides logging and performance monitoring functionality
+ */
 class Monitoring {
 public:
+    /**
+     * @enum LogLevel
+     * @brief Defines logging severity levels
+     */
     enum class LogLevel {
         DEBUG,
         INFO,
         WARNING,
-        ERROR
+        LOG_ERROR,
+        CRITICAL
     };
 
-    struct Metric {
-        std::string name;
-        double value;
-        std::chrono::system_clock::time_point timestamp;
+    /**
+     * @struct Metrics
+     * @brief Contains performance metrics
+     */
+    struct Metrics {
+        int pagesCrawled;
+        int failedRequests;
+        int imagesProcessed;
+        int urlsQueued;
+        int activeThreads;
     };
 
-    struct CrawlerStats {
-        size_t pagesCrawled;
-        size_t queueSize;
-        size_t activeThreads;
-        size_t failedRequests;
-        size_t totalBytesDownloaded;
-        double averageResponseTime;
-        std::chrono::system_clock::time_point startTime;
+    /**
+     * @struct ProfilingData
+     * @brief Contains timing data for performance profiling
+     */
+    struct ProfilingData {
+        std::chrono::duration<double> totalTime;
+        int callCount;
+        std::chrono::time_point<std::chrono::high_resolution_clock> startTime;
     };
 
-    Monitoring(const std::string& logFile = "crawler.log",
-              const std::string& metricsFile = "metrics.csv");
+    /**
+     * @brief Constructor
+     * @param logFilePath Path to the log file
+     * @param level Initial log level
+     */
+    Monitoring(const std::string& logFilePath, LogLevel level = LogLevel::INFO);
+    
+    /**
+     * @brief Destructor
+     */
     ~Monitoring();
 
-    // Logging
+    /**
+     * @brief Log a message
+     * @param level Log level
+     * @param message Message to log
+     */
     void log(LogLevel level, const std::string& message);
-    void setLogLevel(LogLevel level);
-    void setLogFile(const std::string& filename);
+    
+    /**
+     * @brief Log a message with a format string
+     * @param level Log level
+     * @param format Format string
+     * @param ... Format arguments
+     */
+    void logf(LogLevel level, const char* format, ...);
 
-    // Metrics
-    void recordMetric(const std::string& name, double value);
-    std::vector<Metric> getMetrics(const std::string& name,
-                                 std::chrono::minutes timeWindow) const;
-    void saveMetrics();
-    void loadMetrics();
+    /**
+     * @brief Get current metrics
+     * @return Current metrics
+     */
+    Metrics getMetrics() const;
 
-    // Statistics
-    void updateStats(const CrawlerStats& stats);
-    CrawlerStats getCurrentStats() const;
-    void generateReport(const std::string& filename);
+    /**
+     * @brief Update metrics
+     * @param metrics New metrics
+     */
+    void updateMetrics(const Metrics& metrics);
 
-    // Performance monitoring
-    void startProfiling(const std::string& operation);
-    void stopProfiling(const std::string& operation);
-    std::vector<std::pair<std::string, double>> getProfilingResults() const;
+    /**
+     * @brief Get current stats as a string
+     * @return Stats string
+     */
+    std::string getCurrentStats() const;
+
+    /**
+     * @brief Start profiling an operation
+     * @param operationName Name of the operation
+     */
+    void startProfiling(const std::string& operationName);
+
+    /**
+     * @brief Stop profiling an operation
+     * @param operationName Name of the operation
+     */
+    void stopProfiling(const std::string& operationName);
+
+    /**
+     * @brief Get profiling results
+     * @return Map of operation names to profiling data
+     */
+    std::map<std::string, ProfilingData> getProfilingResults() const;
+
+    /**
+     * @brief Get average time for an operation
+     * @param operationName Name of the operation
+     * @return Average time in seconds
+     */
+    double getAverageOperationTime(const std::string& operationName) const;
 
 private:
-    std::ofstream logStream;
-    std::ofstream metricsStream;
-    LogLevel currentLogLevel;
-    std::mutex logMutex;
-    std::mutex metricsMutex;
-    
-    std::vector<Metric> metrics;
-    CrawlerStats currentStats;
-    
-    struct ProfilingEntry {
-        std::chrono::steady_clock::time_point startTime;
-        size_t callCount;
-        double totalTime;
-    };
-    
-    std::unordered_map<std::string, ProfilingEntry> profilingData;
-    std::mutex profilingMutex;
+    /**
+     * @brief Convert log level to string
+     * @param level Log level
+     * @return String representation of log level
+     */
+    std::string logLevelToString(LogLevel level) const;
 
-    std::string getLogLevelString(LogLevel level) const;
-    void writeMetricToFile(const Metric& metric);
-    void cleanupOldMetrics();
-}; 
+    LogLevel currentLogLevel;
+    std::string logFilePath;
+    std::ofstream logFile;
+    
+    Metrics metrics;
+    std::map<std::string, ProfilingData> profilingData;
+    
+    mutable std::mutex metricsMutex;
+    mutable std::mutex profilingMutex;
+    mutable std::mutex logMutex;
+};

@@ -3,11 +3,20 @@
 #include <string>
 #include <vector>
 #include <memory>
-#include <torch/torch.h>
-#include <torch/script.h>
-#include <opencv2/opencv.hpp>
-#include <tesseract/baseapi.h>
-#include <leptonica/allheaders.h>
+// #include <torch/torch.h>
+// #include <torch/script.h>
+// #include <opencv2/opencv.hpp>
+// #include <tesseract/baseapi.h>
+// #include <leptonica/allheaders.h>
+
+// Forward declarations
+namespace cv {
+    class Mat;
+}
+
+namespace tesseract {
+    class TessBaseAPI;
+}
 
 class ImageAnalyzer {
 public:
@@ -40,11 +49,14 @@ public:
     void saveModels(const std::string& modelDir);
 
 private:
+    // Forward declarations for models
+    class TorchModule;
+
     // ML models
-    torch::jit::Module classificationModel;
-    torch::jit::Module objectDetectionModel;
-    torch::jit::Module nsfwModel;
-    torch::jit::Module captionModel;
+    std::unique_ptr<TorchModule> classificationModel;
+    std::unique_ptr<TorchModule> objectDetectionModel;
+    std::unique_ptr<TorchModule> nsfwModel;
+    std::unique_ptr<TorchModule> captionModel;
 
     // OCR engine
     std::unique_ptr<tesseract::TessBaseAPI> ocr;
@@ -52,7 +64,7 @@ private:
     // Image preprocessing
     cv::Mat preprocessImage(const std::string& imagePath);
     cv::Mat preprocessImageData(const std::vector<uint8_t>& imageData);
-    torch::Tensor imageToTensor(const cv::Mat& image);
+    // Tensor imageToTensor(const cv::Mat& image);
     
     // Model inference
     std::vector<std::string> classifyImage(const cv::Mat& image);
@@ -61,7 +73,7 @@ private:
     std::string generateCaption(const cv::Mat& image, const std::vector<std::string>& objects);
 
     // Helper functions
-    std::vector<float> softmax(const torch::Tensor& tensor);
+    std::vector<float> softmax(const std::vector<float>& tensor);
     std::vector<std::string> loadLabels(const std::string& labelFile);
     cv::Mat resizeImage(const cv::Mat& image, int targetSize);
     cv::Mat normalizeImage(const cv::Mat& image);

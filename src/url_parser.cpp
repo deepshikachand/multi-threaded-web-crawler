@@ -1,185 +1,213 @@
-#include "url_parser.hpp"
-#include <stdexcept>
+#include "../include/url_parser.hpp"
+#include <iostream>
 #include <algorithm>
-#include <cctype>
-
-// Initialize static regex patterns
-const std::regex URLParser::url_pattern(
-    R"(^(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?$)",
-    std::regex::icase
-);
-
-const std::regex URLParser::domain_pattern(
-    R"(^([a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]\.)+[a-zA-Z]{2,}$)"
-);
-
-const std::regex URLParser::url_extract_pattern(
-    R"(href=["'](https?:\/\/[^"']+)["'])",
-    std::regex::icase
-);
+#include <sstream>
 
 URLParser::URLParser() {
-    initializeCurl();
+#ifndef USE_STUB_IMPLEMENTATION
+    // In real implementation, initialize curl
+    curlHandle = nullptr;
+#endif
+
+    // Initialize regex patterns
+    urlRegex = std::regex(R"(^(https?):\/\/([^\/\s]+)(\/[^\s]*)?(\?[^\s#]*)?(#[^\s]*)?$)");
+    linkRegex = std::regex(R"(<a\s+[^>]*href=["']([^"']+)["'][^>]*>)");
+    imageRegex = std::regex(R"(<img\s+[^>]*src=["']([^"']+)["'][^>]*>)");
 }
 
 URLParser::~URLParser() {
-    cleanupCurl();
+#ifndef USE_STUB_IMPLEMENTATION
+    // In real implementation, cleanup curl
+#endif
 }
 
-void URLParser::initializeCurl() {
-    curl = curl_easy_init();
-    if (!curl) {
-        throw std::runtime_error("Failed to initialize CURL");
+bool URLParser::parse(const std::string& url) {
+    std::smatch match;
+    if (std::regex_match(url, match, urlRegex)) {
+        scheme = match[1].str();
+        host = match[2].str();
+        path = match[3].str().empty() ? "/" : match[3].str();
+        query = match[4].str();
+        fragment = match[5].str();
+        return true;
     }
+    return false;
 }
 
-void URLParser::cleanupCurl() {
-    if (curl) {
-        curl_easy_cleanup(curl);
-        curl = nullptr;
-    }
-}
-
-bool URLParser::isValidUrl(const std::string& url) {
-    return std::regex_match(url, url_pattern);
-}
-
-std::string URLParser::normalizeUrl(const std::string& url) {
-    std::string normalized = url;
+std::string URLParser::normalize(const std::string& url) {
+    // Basic URL normalization
+    std::string result = url;
     
     // Convert to lowercase
-    std::transform(normalized.begin(), normalized.end(), normalized.begin(), ::tolower);
+    std::transform(result.begin(), result.end(), result.begin(), 
+                  [](unsigned char c) { return std::tolower(c); });
     
-    // Remove trailing slash
-    if (!normalized.empty() && normalized.back() == '/') {
-        normalized.pop_back();
+    // Remove trailing slash if present
+    if (!result.empty() && result.back() == '/') {
+        result.pop_back();
     }
     
-    // Add http:// if no protocol specified
-    if (normalized.find("://") == std::string::npos) {
-        normalized = "http://" + normalized;
+    // Remove fragments
+    size_t fragmentPos = result.find('#');
+    if (fragmentPos != std::string::npos) {
+        result = result.substr(0, fragmentPos);
     }
     
-    return normalized;
+    return result;
+}
+
+std::string URLParser::join(const std::string& baseUrl, const std::string& relativeUrl) {
+    // Handle absolute URLs
+    if (relativeUrl.find("http://") == 0 || relativeUrl.find("https://") == 0) {
+        return relativeUrl;
+    }
+    
+    // Parse base URL
+    parse(baseUrl);
+    std::string base = scheme + "://" + host;
+    
+    // Handle root-relative URLs
+    if (!relativeUrl.empty() && relativeUrl[0] == '/') {
+        return base + relativeUrl;
+    }
+    
+    // Handle relative URLs
+    std::string basePath = path;
+    size_t lastSlash = basePath.find_last_of('/');
+    if (lastSlash != std::string::npos) {
+        basePath = basePath.substr(0, lastSlash + 1);
+    } else {
+        basePath = "/";
+    }
+    
+    return base + basePath + relativeUrl;
 }
 
 std::string URLParser::getDomain(const std::string& url) {
-    std::smatch matches;
-    if (std::regex_search(url, matches, domain_pattern)) {
-        return matches[0];
+    if (parse(url)) {
+        return host;
     }
     return "";
 }
 
-std::string URLParser::getPath(const std::string& url) {
-    size_t pos = url.find("://");
-    if (pos != std::string::npos) {
-        pos = url.find('/', pos + 3);
-        if (pos != std::string::npos) {
-            return url.substr(pos);
-        }
-    }
-    return "/";
+bool URLParser::isValid(const std::string& url) {
+    return std::regex_match(url, urlRegex);
 }
 
-std::string URLParser::getProtocol(const std::string& url) {
-    size_t pos = url.find("://");
-    if (pos != std::string::npos) {
-        return url.substr(0, pos);
-    }
-    return "http";
-}
-
-bool URLParser::isAllowedDomain(const std::string& url, const std::vector<std::string>& allowedDomains) {
-    std::string domain = getDomain(url);
-    return std::find(allowedDomains.begin(), allowedDomains.end(), domain) != allowedDomains.end();
-}
-
-bool URLParser::isSameDomain(const std::string& url1, const std::string& url2) {
-    return getDomain(url1) == getDomain(url2);
-}
-
-std::vector<std::string> URLParser::extractUrls(const std::string& html) {
-    std::vector<std::string> urls;
-    std::sregex_iterator it(html.begin(), html.end(), url_extract_pattern);
+std::vector<std::string> URLParser::extractLinks(const std::string& html, const std::string& baseUrl) {
+    std::vector<std::string> links;
+    std::sregex_iterator it(html.begin(), html.end(), linkRegex);
     std::sregex_iterator end;
     
-    for (; it != end; ++it) {
-        std::smatch match = *it;
-        urls.push_back(match[1]);
+    while (it != end) {
+        std::string link = (*it)[1].str();
+        // Join with base URL if relative
+        if (link.find("http://") != 0 && link.find("https://") != 0) {
+            link = join(baseUrl, link);
+        }
+        links.push_back(link);
+        ++it;
     }
     
-    return urls;
+    return links;
 }
 
-bool URLParser::isWithinDepth(const std::string& url, int currentDepth, int maxDepth) {
-    return currentDepth <= maxDepth;
+std::vector<std::string> URLParser::extractImages(const std::string& html, const std::string& baseUrl) {
+    std::vector<std::string> images;
+    std::sregex_iterator it(html.begin(), html.end(), imageRegex);
+    std::sregex_iterator end;
+    
+    while (it != end) {
+        std::string image = (*it)[1].str();
+        // Join with base URL if relative
+        if (image.find("http://") != 0 && image.find("https://") != 0) {
+            image = join(baseUrl, image);
+        }
+        images.push_back(image);
+        ++it;
+    }
+    
+    return images;
 }
 
-std::string URLParser::encodeUrl(const std::string& url) {
-    if (!curl) {
-        throw std::runtime_error("CURL not initialized");
+int URLParser::getDepth(const std::string& url) {
+    if (parse(url)) {
+        // Count the number of path segments
+        std::string pathCopy = path;
+        if (pathCopy.empty() || pathCopy == "/") {
+            return 0;
+        }
+        
+        // Remove leading and trailing slashes
+        if (pathCopy[0] == '/') {
+            pathCopy = pathCopy.substr(1);
+        }
+        if (!pathCopy.empty() && pathCopy.back() == '/') {
+            pathCopy.pop_back();
+        }
+        
+        // Count segments
+        int depth = 0;
+        size_t pos = 0;
+        while ((pos = pathCopy.find('/', pos)) != std::string::npos) {
+            depth++;
+            pos++;
+        }
+        
+        // Add 1 for the last segment if path is not empty
+        if (!pathCopy.empty()) {
+            depth++;
+        }
+        
+        return depth;
     }
-    
-    char* encoded = curl_easy_escape(curl, url.c_str(), url.length());
-    if (!encoded) {
-        throw std::runtime_error("Failed to encode URL");
-    }
-    
-    std::string result(encoded);
-    curl_free(encoded);
-    return result;
+    return 0;
 }
 
-std::string URLParser::decodeUrl(const std::string& url) {
-    if (!curl) {
-        throw std::runtime_error("CURL not initialized");
-    }
-    
-    int decodedLength;
-    char* decoded = curl_easy_unescape(curl, url.c_str(), url.length(), &decodedLength);
-    if (!decoded) {
-        throw std::runtime_error("Failed to decode URL");
-    }
-    
-    std::string result(decoded, decodedLength);
-    curl_free(decoded);
-    return result;
+std::string URLParser::getScheme() const {
+    return scheme;
 }
 
-std::string URLParser::escapeString(const std::string& str) {
-    std::string escaped;
-    escaped.reserve(str.length());
+std::string URLParser::getHost() const {
+    return host;
+}
+
+std::string URLParser::getPath() const {
+    return path;
+}
+
+std::string URLParser::getQuery() const {
+    return query;
+}
+
+std::string URLParser::getFragment() const {
+    return fragment;
+}
+
+bool URLParser::shouldCrawl(const std::string& url, const std::vector<std::string>& allowedDomains) {
+    // Check if URL is valid
+    if (!isValid(url)) {
+        return false;
+    }
     
-    for (char c : str) {
-        if (std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
-            escaped += c;
-        } else {
-            char hex[4];
-            snprintf(hex, sizeof(hex), "%%%02X", static_cast<unsigned char>(c));
-            escaped += hex;
+    // Parse URL to get domain
+    std::string domain = getDomain(url);
+    
+    // If allowed domains list is empty, allow all
+    if (allowedDomains.empty()) {
+        return true;
+    }
+    
+    // Check if domain is in allowed domains
+    for (const auto& allowedDomain : allowedDomains) {
+        if (domain == allowedDomain || 
+            (domain.length() >= allowedDomain.length() + 1 &&
+             domain.compare(domain.length() - allowedDomain.length() - 1, 
+                            allowedDomain.length() + 1, 
+                            "." + allowedDomain) == 0)) {
+            return true;
         }
     }
     
-    return escaped;
+    return false;
 }
-
-std::string URLParser::unescapeString(const std::string& str) {
-    std::string unescaped;
-    unescaped.reserve(str.length());
-    
-    for (size_t i = 0; i < str.length(); ++i) {
-        if (str[i] == '%' && i + 2 < str.length()) {
-            char hex[3] = {str[i + 1], str[i + 2], '\0'};
-            char c;
-            if (sscanf(hex, "%02hhx", &c) == 1) {
-                unescaped += c;
-                i += 2;
-                continue;
-            }
-        }
-        unescaped += str[i];
-    }
-    
-    return unescaped;
-} 

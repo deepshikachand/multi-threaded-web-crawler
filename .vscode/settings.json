@@ -1,0 +1,24 @@
+{
+    "C_Cpp.default.compilerPath": "C:/msys64/mingw64/bin/g++.exe",
+    "C_Cpp.default.includePath": [
+        "${workspaceFolder}/include",
+        "${workspaceFolder}/src"
+    ],
+    "C_Cpp.default.defines": ["STUB_IMPLEMENTATION", "__INTELLISENSE__"],
+    "C_Cpp.default.cppStandard": "c++17",
+    "C_Cpp.default.intelliSenseMode": "windows-gcc-x64",
+    "C_Cpp.intelliSenseEngineFallback": "enabled",
+    "C_Cpp.default.forcedInclude": [
+        "${workspaceFolder}/include/config_intellisense.hpp",
+        "${workspaceFolder}/include/intellisense_helpers.hpp",
+        "${workspaceFolder}/include/database_extensions.hpp",
+        "${workspaceFolder}/include/monitoring_extensions.hpp"
+    ],
+    "C_Cpp.inlayHints.enabled": false,
+    "C_Cpp.intelliSenseEngine": "default",
+    "C_Cpp.errorSquiggles": "enabled",
+    "C_Cpp.configurationWarnings": "enabled",
+    "C_Cpp.intelliSenseUpdateDelay": 500,
+    "C_Cpp.dimInactiveRegions": false,
+    "C_Cpp.loggingLevel": "Warning"
+}

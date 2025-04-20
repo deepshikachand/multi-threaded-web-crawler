@@ -1,0 +1,35 @@
+{
+  "configurations": [
+    {
+      "name": "Win64",
+      "includePath": [
+        "${workspaceFolder}/include",
+        "${workspaceFolder}/src",
+        "C:/Users/chahi/Downloads/curl-8.13.0_2-win64-mingw/curl-8.13.0_2-win64-mingw/include",
+        "${workspaceFolder}/vcpkg/installed/x64-windows/include"
+      ],
+      "defines": ["STUB_IMPLEMENTATION", "__INTELLISENSE__"],
+      "compilerPath": "C:/msys64/mingw64/bin/g++.exe",
+      "cStandard": "c11",
+      "cppStandard": "c++17",
+      "intelliSenseMode": "windows-gcc-x64",
+      "browse": {
+        "path": [
+          "${workspaceFolder}/include",
+          "${workspaceFolder}/src",
+          "C:/Users/chahi/Downloads/curl-8.13.0_2-win64-mingw/curl-8.13.0_2-win64-mingw/include",
+          "${workspaceFolder}/vcpkg/installed/x64-windows/include"
+        ],
+        "limitSymbolsToIncludedHeaders": true,
+        "databaseFilename": "${workspaceFolder}/.vscode/browse.vc.db"
+      },
+      "forcedInclude": [
+        "${workspaceFolder}/include/config_intellisense.hpp",
+        "${workspaceFolder}/include/intellisense_helpers.hpp",
+        "${workspaceFolder}/include/database_extensions.hpp",
+        "${workspaceFolder}/include/monitoring_extensions.hpp"
+      ]
+    }
+  ],
+  "version": 4
+}

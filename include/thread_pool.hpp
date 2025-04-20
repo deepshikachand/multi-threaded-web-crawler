@@ -1,5 +1,6 @@
 #pragma once
 
+#include "build_config.hpp"
 #include <vector>
 #include <queue>
 #include <thread>
@@ -8,7 +9,12 @@
 #include <functional>
 #include <future>
 #include <atomic>
-#include <pthread.h>
+
+// Define ThreadPoolAttributes struct
+struct ThreadPoolAttributes {
+    size_t thread_index;
+    unsigned long long processor_mask;
+};
 
 class ThreadPool {
 public:
@@ -29,7 +35,10 @@ public:
 private:
     // Worker threads
     std::vector<std::thread> workers;
-    
+
+    // Thread attributes
+    std::vector<ThreadPoolAttributes> thread_attributes;
+
     // Task queue with priority
     struct Task {
         std::function<void()> func;
@@ -39,19 +48,21 @@ private:
         }
     };
     std::priority_queue<Task> tasks;
-    
+
     // Synchronization primitives
     mutable std::mutex queue_mutex;
     std::condition_variable condition;
-    
+
     // Thread pool state
     std::atomic<bool> stop;
     std::atomic<size_t> active_threads;
-    
+
+#ifndef _WIN32
     // Thread attributes for Linux
     pthread_attr_t thread_attr;
-    
+#endif
+
     // Helper functions
     void workerThread();
     void initializeThreadAttributes();
-}; 
+};

@@ -1,60 +1,65 @@
 #pragma once
 
+#include "build_config.hpp"
 #include <string>
-#include <memory>
-#include <sqlite3.h>
+#include <vector>
+#include <map>
 #include <mutex>
-#include <shared_mutex>
-#include <atomic>
-#include <fcntl.h>
-#include <unistd.h>
+#include <memory>
+
+#ifndef USE_STUB_IMPLEMENTATION
+#include <sqlite3.h>
+#endif
 
 class Database {
 public:
-    explicit Database(const std::string& dbPath);
+    Database(const std::string& dbPath);
     ~Database();
 
-    // Initialize database tables with WAL mode for better concurrency
+    // Initialize the database
     bool initialize();
 
-    // Page operations with optimistic locking
+    // Page operations
     bool addPage(const std::string& url, const std::string& title, 
-                 const std::string& content, const std::string& domain, int depth);
-    bool isPageVisited(const std::string& url);
-    bool updatePageErrorCount(const std::string& url);
+                const std::string& content, const std::string& filePath);
+    bool pageExists(const std::string& url);
+    std::string getPageTitle(const std::string& url);
+    std::string getPagePath(const std::string& url);
 
-    // URL Queue operations with priority
-    bool addUrlToQueue(const std::string& url, int depth, int priority = 0);
-    bool getNextUrl(std::string& url, int& depth);
-    bool markUrlAsProcessed(const std::string& url, const std::string& status = "completed");
+    // URL operations
+    bool addUrl(const std::string& url, int depth, bool visited = false);
+    bool markUrlVisited(const std::string& url);
+    bool urlExists(const std::string& url);
+    bool isUrlVisited(const std::string& url);
+    std::vector<std::pair<std::string, int>> getUnvisitedUrls(int limit = 100);
 
-    // Database optimization
-    void optimize();
-    void vacuum();
+    // Image operations
+    bool addImage(const std::string& url, const std::string& pageUrl, 
+                 const std::string& filePath, const std::string& alt = "");
+    bool imageExists(const std::string& url);
+    std::string getImagePath(const std::string& url);
+
+    // Content features
+    bool addContentFeatures(const std::string& url, const std::map<std::string, double>& features);
+
+    // Queue operations
+    int getQueueSize();
 
 private:
-    // Database connection with WAL mode
+#ifndef USE_STUB_IMPLEMENTATION
     sqlite3* db;
-    
-    // Synchronization primitives
-    mutable std::shared_mutex db_mutex;
-    std::atomic<bool> is_optimized;
-    
-    // File descriptor for database file
-    int db_fd;
-    
-    // Helper functions
-    bool executeQuery(const std::string& query);
-    bool prepareStatements();
-    void cleanupStatements();
-    bool enableWALMode();
-    bool setFilePermissions();
-    
-    // Prepared statements
-    sqlite3_stmt* insert_page_stmt;
-    sqlite3_stmt* check_page_stmt;
-    sqlite3_stmt* update_error_stmt;
-    sqlite3_stmt* insert_url_stmt;
-    sqlite3_stmt* get_url_stmt;
-    sqlite3_stmt* update_url_stmt;
-}; 
+#endif
+    std::string dbPath;
+    std::mutex dbMutex;
+
+    // Stub implementations for testing
+#ifdef USE_STUB_IMPLEMENTATION
+    std::map<std::string, std::string> pagesTitles;
+    std::map<std::string, std::string> pagesContent;
+    std::map<std::string, std::string> pagesFiles;
+    std::map<std::string, bool> urlsVisited;
+    std::map<std::string, int> urlsDepth;
+    std::map<std::string, std::string> imagesFiles;
+    std::map<std::string, std::map<std::string, double>> contentFeatures;
+#endif
+};
